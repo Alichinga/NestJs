@@ -2,24 +2,24 @@ import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { pool } from '../db.pool'; // ✅ imported pool
 import { User } from './user.interface';
-
+import * as bcrypt from 'bcrypt';
 @Injectable()
 export class AuthService {
   constructor(private readonly configService: ConfigService) {}
-
+private readonly rounds=4;
   // ✅ Signup
   async signup(username: string, password: string): Promise<string> {
     const check = await pool.query('SELECT * FROM users WHERE username = $1', [
       username,
     ]);
-
     if (check.rows.length > 0) {
       return 'User already exists';
-    }
+    } 
+    const hashpass =await bcrypt.hash(password,this.rounds);
 
     await pool.query('INSERT INTO users (username, password) VALUES ($1, $2)', [
-      username,
-      password,
+      username, 
+      password=hashpass,
     ]);
 
     return 'User registered successfully';
