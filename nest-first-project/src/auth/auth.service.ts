@@ -1,25 +1,31 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { pool } from '../db.pool'; // ✅ imported pool
+import { pool } from '../db.pool';
 import { User } from './user.interface';
 import * as bcrypt from 'bcrypt';
+
 @Injectable()
 export class AuthService {
   constructor(private readonly configService: ConfigService) {}
-private readonly rounds=4;
+
+  private readonly rounds = 10; // use 10+ in real apps (4 is too weak)
+
   // ✅ Signup
   async signup(username: string, password: string): Promise<string> {
     const check = await pool.query('SELECT * FROM users WHERE username = $1', [
       username,
     ]);
+
     if (check.rows.length > 0) {
       return 'User already exists';
-    } 
-    const hashpass =await bcrypt.hash(password,this.rounds);
+    }
+
+    // hash password before saving
+    const hashpass = await bcrypt.hash(password, this.rounds);
 
     await pool.query('INSERT INTO users (username, password) VALUES ($1, $2)', [
-      username, 
-      password=hashpass,
+      username,
+      hashpass,
     ]);
 
     return 'User registered successfully';
@@ -28,14 +34,22 @@ private readonly rounds=4;
   // ✅ Login
   async login(username: string, password: string): Promise<string> {
     const result = await pool.query(
-      'SELECT * FROM users WHERE username = $1 AND password = $2',
-      [username, password],
+      'SELECT * FROM users WHERE username = $1',
+      [username],
     );
 
-    if (result.rows.length > 0) {
-      return `Welcome back, ${username}!`;
+    if (result.rows.length === 0) {
+      return 'Invalid credentials';
     }
-    return 'Invalid credentials';
+
+    const user = result.rows[0];
+    const isMatch = await bcrypt.compare(password, user.password);
+
+    if (isMatch) {
+      return `Welcome back, ${username}!`;
+    } else {
+      return 'Invalid credentials';
+    }
   }
 
   // ✅ Signout (delete user)
@@ -52,14 +66,20 @@ private readonly rounds=4;
   }
 
   // ✅ Change Password
-  async changepassword(username: string, newPassword: string): Promise<string> {
+  async changepassword(
+    username: string,
+    newPassword: string,
+  ): Promise<string> {
     if (!newPassword || newPassword.trim().length < 3) {
       return 'New password is invalid (min 3 chars)';
     }
 
+    // hash the new password
+    const newHash = await bcrypt.hash(newPassword, this.rounds);
+
     const result = await pool.query(
       'UPDATE users SET password = $1 WHERE username = $2 RETURNING *',
-      [newPassword, username],
+      [newHash, username],
     );
 
     if (result.rows.length === 0) {
@@ -69,7 +89,7 @@ private readonly rounds=4;
     return 'Password updated successfully';
   }
 
-  // ✅ Get all users
+  // ✅ Get all users (⚠️ don’t expose passwords in real apps)
   async info(): Promise<User[]> {
     const result = await pool.query('SELECT username, password FROM users');
     return result.rows;
